@@ -6,11 +6,7 @@ import shlex
 import shutil
 import subprocess
 import sys
-
-# Configuration
-INPUT_FOLDER = 'input'           # Folder containing Org-roam notes
-OUTPUT_FOLDER = 'output'         # Destination folder for Obsidian notes
-ATTACHMENTS_FOLDER = 'attachments'  # Subfolder in OUTPUT_FOLDER for attachments
+import argparse
 
 class Note:
     def __init__(self, id, title, content, level, attachments=None):
@@ -132,31 +128,55 @@ def replace_links(second_brain, match, current_note):
     else:
         return f"[{link_text}]({link_target})"
 
-if __name__ == "__main__":
-    second_brain = {}
+def replace_links(second_brain, match, current_note):
+    # ... [Same as previous implementation] ...
+    pass
 
+def copy_attachments(note, original_org_file, attachments_folder, output_folder):
+    # Logic to copy attachments
+    attachment_dir = os.path.dirname(original_org_file)
+    for attachment in note.attachments:
+        # Compute attachment path
+        attachment_subdir = note.id
+        # Extract first two characters for the directory (e.g., '87f4a3...' -> '87')
+        attachment_prefix = attachment_subdir[:2]
+        source_attachment_path = os.path.join(
+            attachments_folder,
+            attachment_prefix,
+            attachment_subdir,
+            attachment
+        )
+        if os.path.exists(source_attachment_path):
+            dest_dir = os.path.join(output_folder, 'attachments', note.id)
+            os.makedirs(dest_dir, exist_ok=True)
+            dest_path = os.path.join(dest_dir, attachment)
+            shutil.copy2(source_attachment_path, dest_path)
+        else:
+            print(f"Attachment not found: {source_attachment_path}")
+
+def main(input_folder='input', output_folder='output', attachments_folder='attachments'):
+    second_brain = {}
+    
     # Step 1: Process Org-roam files to extract IDs, titles, and attachments
     print("Processing files...")
-    for file in (f for f in os.listdir(INPUT_FOLDER) if f.endswith('.org')):
-        filepath = f"{INPUT_FOLDER}/{file}"
+    for file in (f for f in os.listdir(input_folder) if f.endswith('.org')):
+        filepath = os.path.join(input_folder, file)
         notes = extract_notes_from_file(filepath)
         for note in notes:
             second_brain[note.id] = note
 
     # Step 2: Convert notes to Markdown and copy attachments
     print("Transforming notes and copying attachments...")
-    os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+    os.makedirs(output_folder, exist_ok=True)
     for note_id, note in second_brain.items():
         # Create a temporary Org file for each note
-        temp_org_filename = f"{OUTPUT_FOLDER}/{note_id}.org"
+        temp_org_filename = os.path.join(output_folder, f"{note_id}.org")
         with open(temp_org_filename, 'w') as fd:
-            # Write the content to the temporary Org file
-            # Add the heading stars based on the level
             fd.write('*' * note.level + ' ' + note.title + '\n')
             fd.write(note.content)
 
         # Convert the temporary Org file to Markdown using Pandoc
-        output_filename = f"{OUTPUT_FOLDER}/{sanitize_filename(note.title)}.md"
+        output_filename = os.path.join(output_folder, f"{sanitize_filename(note.title)}.md")
         cmd = f"pandoc -f org -t markdown --wrap=none '{temp_org_filename}' -o '{output_filename}'"
         subprocess.run(shlex.split(cmd))
 
@@ -164,47 +184,26 @@ if __name__ == "__main__":
         os.remove(temp_org_filename)
 
         # Copy attachments
-        if note.attachments:
-            for attachment in note.attachments:
-                # Determine the path to the attachment
-                # Assuming attachments are stored relative to the original Org file
-                original_org_file = None
-                # Find the original Org file this note came from
-                for file in os.listdir(INPUT_FOLDER):
-                    if file.endswith('.org'):
-                        filepath = f"{INPUT_FOLDER}/{file}"
-                        with open(filepath, 'r') as fd:
-                            content = fd.read()
-                            if note.id in content:
-                                original_org_file = filepath
-                                break
-                if original_org_file is None:
-                    print(f"Original Org file not found for note {note.title}")
-                    continue
-                attachment_dir = os.path.dirname(original_org_file)
-                # Handle absolute and relative paths
-                if attachment.startswith("./") or attachment.startswith("../"):
-                    attachment_path = os.path.normpath(os.path.join(attachment_dir, attachment))
-                else:
-                    # Assuming attachments are stored in 'attachments/ID/' directory
-                    attachment_path = os.path.join(attachment_dir, 'attachments', note.id, attachment)
-                if not os.path.exists(attachment_path):
-                    # Try relative to the note file
-                    attachment_path = os.path.join(attachment_dir, attachment)
-                if os.path.exists(attachment_path):
-                    # Copy the attachment to OUTPUT_FOLDER/ATTACHMENTS_FOLDER/ID/
-                    dest_dir = f"{OUTPUT_FOLDER}/{ATTACHMENTS_FOLDER}/{note.id}"
-                    os.makedirs(dest_dir, exist_ok=True)
-                    dest_path = os.path.join(dest_dir, os.path.basename(attachment))
-                    shutil.copy2(attachment_path, dest_path)
-                else:
-                    print(f"Attachment not found: {attachment_path}")
+        # Find the original Org file this note came from
+        original_org_file = None
+        for file in os.listdir(input_folder):
+            if file.endswith('.org'):
+                filepath = os.path.join(input_folder, file)
+                with open(filepath, 'r') as fd:
+                    content = fd.read()
+                    if note.id in content:
+                        original_org_file = filepath
+                        break
+        if original_org_file:
+            copy_attachments(note, original_org_file, attachments_folder, output_folder)
+        else:
+            print(f"Original Org file not found for note {note.title}")
 
-    # Step 3: Update links in the Markdown files to point to the new attachment locations
+    # Step 3: Update links in the Markdown files
     print("Updating links in Markdown files...")
     link_pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
     for note_id, note in second_brain.items():
-        output_filename = f"{OUTPUT_FOLDER}/{sanitize_filename(note.title)}.md"
+        output_filename = os.path.join(output_folder, f"{sanitize_filename(note.title)}.md")
         print(f"Processing file: {output_filename}")
         with open(output_filename, 'r') as fd:
             content = fd.read()
@@ -214,3 +213,12 @@ if __name__ == "__main__":
             fd.write(new_content)
 
     print("Conversion complete!")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Convert Org-roam notes to Obsidian format")
+    parser.add_argument("--input", dest="input_folder", default="input", help="Folder containing Org-roam notes")
+    parser.add_argument("--output", dest="output_folder", default="output", help="Destination folder for Obsidian notes")
+    parser.add_argument("--attachments", dest="attachments_folder", default="attachments", help="Subfolder in OUTPUT_FOLDER for attachments")
+    args = parser.parse_args()
+
+    main(output_folder=args.output_folder, input_folder=args.input_folder,
+         attachments_folder=args.attachments_folder)
