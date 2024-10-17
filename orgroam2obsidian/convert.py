@@ -8,6 +8,8 @@ import subprocess
 import sys
 import argparse
 
+ATTACHMENTS_FOLDER = 'attachments'  # Default value; can be overridden
+
 class Note:
     def __init__(self, id, title, content, level, attachments=None):
         self.id = id
@@ -15,6 +17,9 @@ class Note:
         self.content = content
         self.level = level  # Heading level in the Org file
         self.attachments = attachments if attachments is not None else []
+
+def get_attachment_prefix(note_id):
+    return note_id[:2]
 
 def extract_notes_from_file(filename: str):
     """
@@ -30,31 +35,74 @@ def extract_notes_from_file(filename: str):
     attachments = []
     current_level = 0
     title = None
-    id = None
     in_properties = False
     properties = {}
     line_index = 0
 
+    # First, parse the title and properties at the top of the file
     while line_index < len(lines):
         line = lines[line_index]
+        # Check for title
+        title_match = re.match(r'^\s*#\+title:\s*(.+)', line, re.IGNORECASE)
+        if title_match:
+            title = title_match.group(1).strip()
+            line_index += 1
+            continue
         # Check for property drawer start
-        if line.strip() == ':PROPERTIES:':
+        elif line.strip() == ':PROPERTIES:':
             in_properties = True
             line_index += 1
             continue
         # Check for property drawer end
-        if line.strip() == ':END:':
+        elif line.strip() == ':END:':
             in_properties = False
             line_index += 1
             continue
         # Collect properties
-        if in_properties:
+        elif in_properties:
             prop_match = re.match(r':([^:]+):\s*(.+)', line.strip())
             if prop_match:
                 key, value = prop_match.groups()
                 properties[key] = value
             line_index += 1
             continue
+        # Detect first heading
+        elif re.match(r'^\*+\s+', line):
+            break  # Start of first heading
+        else:
+            # Collect content lines
+            content_lines.append(line)
+            line_index += 1
+
+    # Create the top-level note if it has an ID
+    if properties.get('ID'):
+        note = Note(
+            id=properties['ID'],
+            title=title if title else 'Untitled',
+            content='',
+            level=0,
+        )
+        # Collect attachments from the content
+        attachments = []
+        attachment_link_pattern = r'\[\[attachment:([^\]]+)\]\]'
+        file_link_pattern = r'\[\[file:([^\]]+)\]\]'
+        for line in content_lines:
+            attachment_matches = re.findall(attachment_link_pattern, line)
+            attachments.extend(attachment_matches)
+            file_matches = re.findall(file_link_pattern, line)
+            for file_link in file_matches:
+                if file_link.startswith('attachments/') or file_link.startswith('./'):
+                    attachments.append(file_link)
+        note.attachments = attachments
+        note.content = ''.join(content_lines)
+        notes.append(note)
+        note = None  # Reset for the next note
+        content_lines = []
+        attachments = []
+
+    # Now process the rest of the file
+    while line_index < len(lines):
+        line = lines[line_index]
         # Detect headings
         heading_match = re.match(r'^(?P<stars>\*+)\s+(?P<title>.+)', line)
         if heading_match:
@@ -72,18 +120,37 @@ def extract_notes_from_file(filename: str):
             current_level = len(stars)
             title = heading_match.group('title')
             properties = {}
+            in_properties = False
             line_index += 1
-            continue
-        else:
-            # If not in a heading, collect content
-            if note is None and properties.get('ID'):
-                # Start collecting the top-level note
+            # Check for properties immediately after heading
+            while line_index < len(lines):
+                line = lines[line_index]
+                if line.strip() == ':PROPERTIES:':
+                    in_properties = True
+                    line_index += 1
+                elif line.strip() == ':END:':
+                    in_properties = False
+                    line_index += 1
+                elif in_properties:
+                    prop_match = re.match(r':([^:]+):\s*(.+)', line.strip())
+                    if prop_match:
+                        key, value = prop_match.groups()
+                        properties[key] = value
+                    line_index += 1
+                else:
+                    break  # Done with properties
+            # Now check if this heading has an ID
+            if properties.get('ID'):
                 note = Note(
                     id=properties['ID'],
-                    title=title if title else 'Untitled',
+                    title=title,
                     content='',
                     level=current_level
                 )
+            else:
+                note = None
+            continue
+        else:
             if note:
                 # Collect content lines
                 content_lines.append(line)
@@ -98,7 +165,7 @@ def extract_notes_from_file(filename: str):
                         attachments.append(file_link)
             line_index += 1
 
-    # Handle the last note in the file
+    # Handle the last note
     if note:
         note.content = ''.join(content_lines)
         note.attachments = attachments
@@ -107,38 +174,12 @@ def extract_notes_from_file(filename: str):
     return notes
 
 def sanitize_filename(filename):
-    """
-    Sanitize filenames to remove or replace characters that are invalid in file paths.
-    """
+    # [Same as previous implementation]
     sanitized_filename = re.sub(r'[\'<>:"/\\|?*\x00-\x1F]', '-', filename)
     return sanitized_filename
 
 def replace_links(second_brain, match, current_note):
-    """
-    Replace Org-roam links with Obsidian-compatible Markdown links.
-    """
-    link_text = match.group(1)
-    link_target = match.group(2)
-    if link_target.startswith("id:"):
-        target_note_id = link_target.removeprefix('id:')
-        target_note = second_brain.get(target_note_id)
-        if target_note:
-            return f"[[{sanitize_filename(target_note.title)}]]"
-        else:
-            return f"[Note not found: {link_text}]({link_target})"
-    elif link_target.startswith("attachment:"):
-        attachment_path = link_target.removeprefix('attachment:')
-        attachment_filename = os.path.basename(attachment_path)
-        # Construct the new path to the attachment in the output folder
-        new_attachment_path = f"{ATTACHMENTS_FOLDER}/{current_note.id}/{attachment_filename}"
-        return f"![[{new_attachment_path}]]"
-    else:
-        return f"[{link_text}]({link_target})"
-
-def replace_links(second_brain, match, current_note):
-    """
-    Replace Org-roam links with Obsidian-compatible Markdown links.
-    """
+    # [Ensure only one definition exists]
     link_text = match.group(1)
     link_target = match.group(2)
     if link_target.startswith("id:"):
@@ -158,24 +199,19 @@ def replace_links(second_brain, match, current_note):
         return f"[{link_text}]({link_target})"
 
 def copy_attachments(note, attachments_folder, output_folder):
+    attachment_prefix = get_attachment_prefix(note.id)
+    if not attachment_prefix:
+        print(f"No attachment prefix found for note {note.id}")
+        return
     for attachment in note.attachments:
-        # Extract the attachment directory based on the test data structure
-        # Use the first two characters of the note ID, but they are '00' or '4d' in test data
-        # Let's create a mapping or function to get the correct prefix
-
-        # For testing purposes, we'll assume the prefixes are provided
-        # In real cases, you might need to derive the prefixes or store a mapping
-        attachment_subdir = note.id
-        # Extract the first two characters from the attachment ID
-        attachment_prefix = note.id[:2]
         source_attachment_path = os.path.join(
             attachments_folder,
             attachment_prefix,
-            attachment_subdir,
+            note.id,
             attachment
         )
         if os.path.exists(source_attachment_path):
-            dest_dir = os.path.join(output_folder, 'attachments', note.id)
+            dest_dir = os.path.join(output_folder, ATTACHMENTS_FOLDER, note.id)
             os.makedirs(dest_dir, exist_ok=True)
             dest_path = os.path.join(dest_dir, attachment)
             shutil.copy2(source_attachment_path, dest_path)
@@ -184,7 +220,7 @@ def copy_attachments(note, attachments_folder, output_folder):
 
 def main(input_folder='input', output_folder='output', attachments_folder='attachments'):
     global ATTACHMENTS_FOLDER
-    ATTACHMENTS_FOLDER = 'attachments'  # Update if attachments_folder parameter is used elsewhere
+    ATTACHMENTS_FOLDER = attachments_folder  # Update if overridden
 
     second_brain = {}
 
@@ -215,20 +251,7 @@ def main(input_folder='input', output_folder='output', attachments_folder='attac
         os.remove(temp_org_filename)
 
         # Copy attachments
-        # Find the original Org file this note came from
-        original_org_file = None
-        for file in os.listdir(input_folder):
-            if file.endswith('.org'):
-                filepath = os.path.join(input_folder, file)
-                with open(filepath, 'r') as fd:
-                    content = fd.read()
-                    if note.id in content:
-                        original_org_file = filepath
-                        break
-        if original_org_file:
-            copy_attachments(note, original_org_file, attachments_folder, output_folder)
-        else:
-            print(f"Original Org file not found for note {note.title}")
+        copy_attachments(note, attachments_folder, output_folder)
 
     # Step 3: Update links in the Markdown files
     print("Updating links in Markdown files...")
@@ -253,7 +276,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Org-roam notes to Obsidian format")
     parser.add_argument("--input", dest="input_folder", default="input", help="Folder containing Org-roam notes")
     parser.add_argument("--output", dest="output_folder", default="output", help="Destination folder for Obsidian notes")
-    parser.add_argument("--attachments", dest="attachments_folder", default="attachments", help="Subfolder in OUTPUT_FOLDER for attachments")
+    parser.add_argument("--attachments", dest="attachments_folder", default="attachments", help="Folder containing attachments")
     args = parser.parse_args()
 
     main(

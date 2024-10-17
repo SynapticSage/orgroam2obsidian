@@ -84,8 +84,7 @@ def test_copy_attachments(setup_test_environment):
         level=1,
         attachments=['attachment1.png']
     )
-    original_org_file = os.path.join(INPUT_FOLDER, 'note1.org')
-    copy_attachments(note, original_org_file, ATTACHMENTS_FOLDER, OUTPUT_FOLDER)
+    copy_attachments(note, ATTACHMENTS_FOLDER, OUTPUT_FOLDER)
     # Check that the attachment exists in the output directory
     attachment_output_path = os.path.join(
         OUTPUT_FOLDER,
