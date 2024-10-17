@@ -1,13 +1,19 @@
 [tool.poetry]
-name = "orgroam-to-obsidian"
+authors = [
+	"Toni Cebrián <toni@tonicebrian.com>",
+	"Ryan Young <git@ryanyoung.io>",
+]
+name = "orgroam2obsidian"
 version = "0.1.0"
 description = ""
-authors = ["Toni Cebrián <toni@tonicebrian.com>"]
 readme = "README.md"
+packages = [{ include = "orgroam2obsidian" }]
 
 [tool.poetry.dependencies]
 python = "^3.11"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.3"
 
 [build-system]
 requires = ["poetry-core"]

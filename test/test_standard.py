@@ -4,7 +4,7 @@ import os
 import shutil
 import pytest
 import re
-from orgroam2obsidian import (
+from orgroam2obsidian.convert import (
     extract_notes_from_file,
     sanitize_filename,
     replace_links,

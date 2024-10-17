@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import os
 import re
@@ -18,7 +18,7 @@ class Note:
 
 def extract_notes_from_file(filename: str):
     """
-    Extract notes (nodes) from an Org file, including subheadings with their own IDs.
+    Extract notes (nodes) from an Org file, including the top-level content and subheadings with their own IDs.
     """
     notes = []
     with open(filename, 'r') as fd:
@@ -26,14 +26,35 @@ def extract_notes_from_file(filename: str):
 
     # Initialize variables
     note = None
-    collecting = False
     content_lines = []
     attachments = []
     current_level = 0
     title = None
     id = None
+    in_properties = False
+    properties = {}
+    line_index = 0
 
-    for i, line in enumerate(lines):
+    while line_index < len(lines):
+        line = lines[line_index]
+        # Check for property drawer start
+        if line.strip() == ':PROPERTIES:':
+            in_properties = True
+            line_index += 1
+            continue
+        # Check for property drawer end
+        if line.strip() == ':END:':
+            in_properties = False
+            line_index += 1
+            continue
+        # Collect properties
+        if in_properties:
+            prop_match = re.match(r':([^:]+):\s*(.+)', line.strip())
+            if prop_match:
+                key, value = prop_match.groups()
+                properties[key] = value
+            line_index += 1
+            continue
         # Detect headings
         heading_match = re.match(r'^(?P<stars>\*+)\s+(?P<title>.+)', line)
         if heading_match:
@@ -46,39 +67,24 @@ def extract_notes_from_file(filename: str):
                 content_lines = []
                 attachments = []
                 note = None
-                collecting = False
-
+            # Start a new note
             stars = heading_match.group('stars')
             current_level = len(stars)
             title = heading_match.group('title')
-
-            # Check for ID in property drawer below heading
-            # Look ahead in lines to find :ID: property
-            id = None
-            j = i + 1
-            in_properties = False
-            while j < len(lines):
-                prop_line = lines[j].strip()
-                if prop_line == ':PROPERTIES:':
-                    in_properties = True
-                elif prop_line == ':END:':
-                    in_properties = False
-                elif in_properties:
-                    id_match = re.match(r':ID:\s+([a-f0-9\-]+)', prop_line)
-                    if id_match:
-                        id = id_match.group(1)
-                else:
-                    break  # Stop if we're past the property drawer
-                j += 1
-
-            if id:
-                # Start collecting this note
-                note = Note(id=id, title=title, content='', level=current_level)
-                collecting = True
-            else:
-                collecting = False  # Skip headings without ID
+            properties = {}
+            line_index += 1
+            continue
         else:
-            if collecting:
+            # If not in a heading, collect content
+            if note is None and properties.get('ID'):
+                # Start collecting the top-level note
+                note = Note(
+                    id=properties['ID'],
+                    title=title if title else 'Untitled',
+                    content='',
+                    level=current_level
+                )
+            if note:
                 # Collect content lines
                 content_lines.append(line)
                 # Find attachment links
@@ -90,6 +96,7 @@ def extract_notes_from_file(filename: str):
                 for file_link in file_matches:
                     if file_link.startswith('attachments/') or file_link.startswith('./'):
                         attachments.append(file_link)
+            line_index += 1
 
     # Handle the last note in the file
     if note:
@@ -129,17 +136,38 @@ def replace_links(second_brain, match, current_note):
         return f"[{link_text}]({link_target})"
 
 def replace_links(second_brain, match, current_note):
-    # ... [Same as previous implementation] ...
-    pass
+    """
+    Replace Org-roam links with Obsidian-compatible Markdown links.
+    """
+    link_text = match.group(1)
+    link_target = match.group(2)
+    if link_target.startswith("id:"):
+        target_note_id = link_target.removeprefix('id:')
+        target_note = second_brain.get(target_note_id)
+        if target_note:
+            return f"[[{sanitize_filename(target_note.title)}]]"
+        else:
+            return f"[Note not found: {link_text}]({link_target})"
+    elif link_target.startswith("attachment:"):
+        attachment_path = link_target.removeprefix('attachment:')
+        attachment_filename = os.path.basename(attachment_path)
+        # Construct the new path to the attachment in the output folder
+        new_attachment_path = f"{ATTACHMENTS_FOLDER}/{current_note.id}/{attachment_filename}"
+        return f"![[{new_attachment_path}]]"
+    else:
+        return f"[{link_text}]({link_target})"
 
-def copy_attachments(note, original_org_file, attachments_folder, output_folder):
-    # Logic to copy attachments
-    attachment_dir = os.path.dirname(original_org_file)
+def copy_attachments(note, attachments_folder, output_folder):
     for attachment in note.attachments:
-        # Compute attachment path
+        # Extract the attachment directory based on the test data structure
+        # Use the first two characters of the note ID, but they are '00' or '4d' in test data
+        # Let's create a mapping or function to get the correct prefix
+
+        # For testing purposes, we'll assume the prefixes are provided
+        # In real cases, you might need to derive the prefixes or store a mapping
         attachment_subdir = note.id
-        # Extract first two characters for the directory (e.g., '87f4a3...' -> '87')
-        attachment_prefix = attachment_subdir[:2]
+        # Extract the first two characters from the attachment ID
+        attachment_prefix = note.id[:2]
         source_attachment_path = os.path.join(
             attachments_folder,
             attachment_prefix,
@@ -155,8 +183,11 @@ def copy_attachments(note, original_org_file, attachments_folder, output_folder)
             print(f"Attachment not found: {source_attachment_path}")
 
 def main(input_folder='input', output_folder='output', attachments_folder='attachments'):
+    global ATTACHMENTS_FOLDER
+    ATTACHMENTS_FOLDER = 'attachments'  # Update if attachments_folder parameter is used elsewhere
+
     second_brain = {}
-    
+
     # Step 1: Process Org-roam files to extract IDs, titles, and attachments
     print("Processing files...")
     for file in (f for f in os.listdir(input_folder) if f.endswith('.org')):
@@ -208,11 +239,16 @@ def main(input_folder='input', output_folder='output', attachments_folder='attac
         with open(output_filename, 'r') as fd:
             content = fd.read()
             # Replace links using the replace_links function
-            new_content = re.sub(link_pattern, lambda m: replace_links(second_brain, m, note), content)
+            new_content = re.sub(
+                link_pattern,
+                lambda m: replace_links(second_brain, m, note),
+                content
+            )
         with open(output_filename, 'w') as fd:
             fd.write(new_content)
 
     print("Conversion complete!")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Convert Org-roam notes to Obsidian format")
     parser.add_argument("--input", dest="input_folder", default="input", help="Folder containing Org-roam notes")
@@ -220,5 +256,8 @@ if __name__ == "__main__":
     parser.add_argument("--attachments", dest="attachments_folder", default="attachments", help="Subfolder in OUTPUT_FOLDER for attachments")
     args = parser.parse_args()
 
-    main(output_folder=args.output_folder, input_folder=args.input_folder,
-         attachments_folder=args.attachments_folder)
+    main(
+        output_folder=args.output_folder,
+        input_folder=args.input_folder,
+        attachments_folder=args.attachments_folder
+    )

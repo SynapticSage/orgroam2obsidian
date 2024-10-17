@@ -2,3 +2,5 @@ input/
 output/
 .DS_Store
 test/fakedata
+orgroam2obsidian/__pycache__
+test/__pycache__
