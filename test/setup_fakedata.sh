@@ -56,4 +56,34 @@ touch fakedata/attachments/00/87f4a3-a24c-4a96-938f-f00ef1f67ef3/attachment1.png
 touch fakedata/attachments/00/8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA/attachment2.pdf
 touch fakedata/attachments/4d/5970E7-4DAD-4E87-9256-B1E63E4C2885/attachment3.jpg
 
-echo "Fakedata folder structure created successfully."
+echo "Original fakedata folder structure created successfully."
+
+# Create new attachment directories matching the first two characters of the note IDs
+mkdir -p fakedata/attachments/87/87f4a3-a24c-4a96-938f-f00ef1f67ef3
+mkdir -p fakedata/attachments/8A/8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA
+mkdir -p fakedata/attachments/59/5970E7-4DAD-4E87-9256-B1E63E4C2885
+mkdir -p fakedata/attachments/7a/7ab7a4-c880-4012-865c-4168c1c43aba
+
+# Create empty attachment files (placeholders) in the new structure
+touch fakedata/attachments/87/87f4a3-a24c-4a96-938f-f00ef1f67ef3/attachment1.png
+touch fakedata/attachments/8A/8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA/attachment2.pdf
+touch fakedata/attachments/59/5970E7-4DAD-4E87-9256-B1E63E4C2885/attachment3.jpg
+touch fakedata/attachments/7a/7ab7a4-c880-4012-865c-4168c1c43aba/attachment4.txt
+
+echo "New fakedata folder structure created successfully."
+
+# Remove existing attachments directory if needed
+rm -rf fakedata/attachments
+
+# Create attachment directories matching the first two characters of the note IDs
+mkdir -p fakedata/attachments/87/87f4a3-a24c-4a96-938f-f00ef1f67ef3
+mkdir -p fakedata/attachments/8A/8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA
+mkdir -p fakedata/attachments/59/5970E7-4DAD-4E87-9256-B1E63E4C2885
+mkdir -p fakedata/attachments/7a/7ab7a4-c880-4012-865c-4168c1c43aba
+
+# Create empty attachment files (placeholders)
+touch fakedata/attachments/87/87f4a3-a24c-4a96-938f-f00ef1f67ef3/attachment1.png
+touch fakedata/attachments/8A/8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA/attachment2.pdf
+touch fakedata/attachments/59/5970E7-4DAD-4E87-9256-B1E63E4C2885/attachment3.jpg
+# If note 7ab7a4-c880-4012-865c-4168c1c43aba has an attachment, create it
+touch fakedata/attachments/7a/7ab7a4-c880-4012-865c-4168c1c43aba/attachment4.txt
