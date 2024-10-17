@@ -198,7 +198,8 @@ def replace_links(second_brain, match, current_note):
     else:
         return f"[{link_text}]({link_target})"
 
-def copy_attachments(note, attachments_folder, output_folder):
+def copy_attachments(note, attachments_folder, output_folder, use_title=False):
+    """ Copy attachments for a note to the output folder """
     attachment_prefix = get_attachment_prefix(note.id)
     if not attachment_prefix:
         print(f"No attachment prefix found for note {note.id}")
@@ -211,14 +212,27 @@ def copy_attachments(note, attachments_folder, output_folder):
             attachment
         )
         if os.path.exists(source_attachment_path):
-            dest_dir = os.path.join(output_folder, ATTACHMENTS_FOLDER, note.id)
+            # Use basename of ATTACHMENTS_FOLDER
+            attachments_basename = os.path.basename(ATTACHMENTS_FOLDER)
+            
+            # Use note title or ID based on the use_title flag
+            folder_name = sanitize_filename(note.title) if use_title else note.id
+            
+            dest_dir = os.path.join(output_folder, attachments_basename, folder_name)
             os.makedirs(dest_dir, exist_ok=True)
             dest_path = os.path.join(dest_dir, attachment)
             shutil.copy2(source_attachment_path, dest_path)
         else:
             print(f"Attachment not found: {source_attachment_path}")
 
-def main(input_folder='input', output_folder='output', attachments_folder='attachments'):
+def main(input_folder='input', output_folder='output', attachments_folder='attachments', use_title=False):
+
+    print("Converting Org-roam notes to Obsidian format...")
+    print("Input folder:", input_folder)
+    print("Attachments folder:", attachments_folder)
+    print("Output folder:", output_folder)
+    print("Use title for attachment folders:", use_title)
+
     global ATTACHMENTS_FOLDER
     ATTACHMENTS_FOLDER = attachments_folder  # Update if overridden
 
@@ -251,7 +265,7 @@ def main(input_folder='input', output_folder='output', attachments_folder='attac
         os.remove(temp_org_filename)
 
         # Copy attachments
-        copy_attachments(note, attachments_folder, output_folder)
+        copy_attachments(note, attachments_folder, output_folder, use_title)
 
     # Step 3: Update links in the Markdown files
     print("Updating links in Markdown files...")
@@ -277,10 +291,12 @@ if __name__ == "__main__":
     parser.add_argument("--input", dest="input_folder", default="input", help="Folder containing Org-roam notes")
     parser.add_argument("--output", dest="output_folder", default="output", help="Destination folder for Obsidian notes")
     parser.add_argument("--attachments", dest="attachments_folder", default="attachments", help="Folder containing attachments")
+    parser.add_argument("--use-title", dest="use_title", action="store_true", help="Use note title for attachment folders instead of ID")
     args = parser.parse_args()
 
     main(
         output_folder=args.output_folder,
         input_folder=args.input_folder,
-        attachments_folder=args.attachments_folder
+        attachments_folder=args.attachments_folder,
+        use_title=args.use_title
     )
