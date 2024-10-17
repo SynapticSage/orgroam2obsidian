@@ -9,6 +9,7 @@ from orgroam2obsidian.convert import (
     sanitize_filename,
     replace_links,
     copy_attachments,
+    get_attachment_prefix,
     Note,
     main,
 )
@@ -110,13 +111,21 @@ def test_full_conversion(setup_test_environment):
         assert filename in output_files
     # Check that attachments are copied
     attachment_paths = [
-        os.path.join(OUTPUT_FOLDER, 'attachments', '87f4a3-a24c-4a96-938f-f00ef1f67ef3', 'attachment1.png'),
-        os.path.join(OUTPUT_FOLDER, 'attachments', '8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA', 'attachment2.pdf'),
-        os.path.join(OUTPUT_FOLDER, 'attachments', '5970E7-4DAD-4E87-9256-B1E63E4C2885', 'attachment3.jpg'),
+        ('87f4a3-a24c-4a96-938f-f00ef1f67ef3', 'attachment1.png'),
+        ('8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA', 'attachment2.pdf'),
+        ('5970E7-4DAD-4E87-9256-B1E63E4C2885', 'attachment3.jpg'),
     ]
+    for i in range(len(attachment_paths)):
+        attachment_paths[i] = os.path.join(ATTACHMENTS_FOLDER,
+                                           get_attachment_prefix(attachment_paths[i][0]),
+                                           attachment_paths[i][0],
+                                           attachment_paths[i][1])
     for path in attachment_paths:
+        print("Checking path:", path)
         assert os.path.exists(path)
     # Check that links are correctly replaced in the Markdown files
+
+def test_links_replaced(setup_test_environment):
     note_one_md_path = os.path.join(OUTPUT_FOLDER, 'Note One.md')
     with open(note_one_md_path, 'r') as f:
         content = f.read()
