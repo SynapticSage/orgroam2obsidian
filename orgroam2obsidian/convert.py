@@ -1,6 +1,7 @@
 #!/usr/bin/env python
+
 # TODO: 2024/10/17
-# 1. Move utility files to utils.py
+# 1. Move utility functions to utils.py
 # 2. Create more utils:
 #   - get_note_path(...)
 #   - get_attachment_path(...)
@@ -23,6 +24,7 @@ class Note:
         self.attachments = attachments if attachments is not None else []
 
 def get_attachment_prefix(note_id):
+    # Use the first two characters of the note ID as the attachment prefix
     return note_id[:2]
 
 def extract_notes_from_file(filename: str):
@@ -178,14 +180,19 @@ def extract_notes_from_file(filename: str):
     return notes
 
 def sanitize_filename(filename):
-    # [Same as previous implementation]
+    """
+    Sanitize filenames to remove or replace characters that are invalid in file paths.
+    """
     sanitized_filename = re.sub(r'[\'<>:"/\\|?*\x00-\x1F]', '-', filename)
     return sanitized_filename
 
 def replace_links(second_brain, match, current_note):
-    # [Ensure only one definition exists]
-    link_text = match.group(1)
-    link_target = match.group(2)
+    """
+    Replace links in Markdown files with Obsidian-compatible links.
+    """
+    is_image = match.group(1) == '!'
+    link_text = match.group(2)
+    link_target = match.group(3)
     if link_target.startswith("id:"):
         target_note_id = link_target.removeprefix('id:')
         target_note = second_brain.get(target_note_id)
@@ -198,16 +205,19 @@ def replace_links(second_brain, match, current_note):
         attachment_filename = os.path.basename(attachment_path)
         # Construct the new path to the attachment in the output folder
         new_attachment_path = f"{ATTACHMENTS_FOLDER}/{current_note.id}/{attachment_filename}"
-        return f"![[{new_attachment_path}]]"
+        if is_image:
+            return f"![[{new_attachment_path}]]"
+        else:
+            return f"[[{new_attachment_path}]]"
     else:
-        return f"[{link_text}]({link_target})"
+        if is_image:
+            return f"![]({link_target})"
+        else:
+            return f"[{link_text}]({link_target})"
 
 def copy_attachments(note, attachments_folder, output_folder, use_title=False):
-    """ Copy attachments for a note to the output folder """
+    """Copy attachments for a note to the output folder."""
     attachment_prefix = get_attachment_prefix(note.id)
-    if not attachment_prefix:
-        print(f"No attachment prefix found for note {note.id}")
-        return
     for attachment in note.attachments:
         source_attachment_path = os.path.join(
             attachments_folder,
@@ -218,10 +228,8 @@ def copy_attachments(note, attachments_folder, output_folder, use_title=False):
         if os.path.exists(source_attachment_path):
             # Use basename of ATTACHMENTS_FOLDER
             attachments_basename = os.path.basename(ATTACHMENTS_FOLDER)
-            
             # Use note title or ID based on the use_title flag
             folder_name = sanitize_filename(note.title) if use_title else note.id
-            
             dest_dir = os.path.join(output_folder, attachments_basename, folder_name)
             os.makedirs(dest_dir, exist_ok=True)
             dest_path = os.path.join(dest_dir, attachment)
@@ -273,7 +281,8 @@ def main(input_folder='input', output_folder='output', attachments_folder='attac
 
     # Step 3: Update links in the Markdown files
     print("Updating links in Markdown files...")
-    link_pattern = r'\[([^\]]+)\]\(([^\)]+)\)'
+    # Update regex pattern to match both standard and image links
+    link_pattern = r'(!?)\[(.*?)\]\((.*?)\)'
     for note_id, note in second_brain.items():
         output_filename = os.path.join(output_folder, f"{sanitize_filename(note.title)}.md")
         print(f"Processing file: {output_filename}")

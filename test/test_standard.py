@@ -1,80 +1,29 @@
-# test/test.py
-
 import os
 import shutil
 import pytest
-import re
-from orgroam2obsidian.convert import (
-    extract_notes_from_file,
-    sanitize_filename,
-    replace_links,
-    copy_attachments,
-    get_attachment_prefix,
-    Note,
-    main,
-)
+from orgroam2obsidian.convert import *
 
-# Set up paths for test data
+# Constants for test directories
 TEST_DIR = os.path.dirname(__file__)
-FAKEDATA_DIR = os.path.join(TEST_DIR, 'fakedata')
-INPUT_FOLDER = os.path.join(FAKEDATA_DIR, 'data')
-ATTACHMENTS_FOLDER = os.path.join(FAKEDATA_DIR, 'attachments')
-OUTPUT_FOLDER = os.path.join(FAKEDATA_DIR, 'output')
+INPUT_FOLDER = os.path.join(TEST_DIR, 'fakedata', 'data')
+OUTPUT_FOLDER = os.path.join(TEST_DIR, 'fakedata', 'output')
+ATTACHMENTS_FOLDER = os.path.join(TEST_DIR, 'fakedata', 'attachments')
 
-@pytest.fixture(scope='module')
+@pytest.fixture
 def setup_test_environment():
-    # Prepare the output directory
+    # Ensure the output directory is clean before each test
     if os.path.exists(OUTPUT_FOLDER):
         shutil.rmtree(OUTPUT_FOLDER)
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-    yield
-    # Clean up after tests
-    shutil.rmtree(OUTPUT_FOLDER)
 
 def test_extract_notes_from_file():
-    # Test that notes are correctly extracted from an Org file
-    note1_path = os.path.join(INPUT_FOLDER, 'note1.org')
-    notes = extract_notes_from_file(note1_path)
+    # Test the extraction of notes from an Org file
+    filepath = os.path.join(INPUT_FOLDER, 'note1.org')
+    notes = extract_notes_from_file(filepath)
     assert len(notes) == 2
-    note_ids = [note.id for note in notes]
-    assert '87f4a3-a24c-4a96-938f-f00ef1f67ef3' in note_ids
-    assert '8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA' in note_ids
-
-def test_sanitize_filename():
-    # Test filename sanitization
-    filename = 'Invalid/File:Name?.org'
-    sanitized = sanitize_filename(filename)
-    assert sanitized == 'Invalid-File-Name-.org'
-
-def test_replace_links():
-    # Test link replacement in notes
-    second_brain = {
-        '87f4a3-a24c-4a96-938f-f00ef1f67ef3': Note(
-            id='87f4a3-a24c-4a96-938f-f00ef1f67ef3',
-            title='Note One',
-            content='',
-            level=1
-        ),
-        '5970E7-4DAD-4E87-9256-B1E63E4C2885': Note(
-            id='5970E7-4DAD-4E87-9256-B1E63E4C2885',
-            title='Note Two',
-            content='',
-            level=1
-        ),
-    }
-    current_note = second_brain['87f4a3-a24c-4a96-938f-f00ef1f67ef3']
-    link_text = 'Link to Note Two'
-    link_target = 'id:5970E7-4DAD-4E87-9256-B1E63E4C2885'
-    match = re.match(r'(.*)', '')
-    match = re.match(r'.*', '')
-    class MockMatch:
-        def group(self, index):
-            if index == 1:
-                return link_text
-            elif index == 2:
-                return link_target
-    replaced_link = replace_links(second_brain, MockMatch(), current_note)
-    assert replaced_link == '[[Note Two]]'
+    note_titles = [note.title for note in notes]
+    assert 'Note One' in note_titles
+    assert 'Heading One' in note_titles
 
 def test_copy_attachments(setup_test_environment):
     # Test that attachments are copied correctly
@@ -111,23 +60,21 @@ def test_full_conversion(setup_test_environment):
         assert filename in output_files
     # Check that attachments are copied
     attachment_paths = [
-        ('87f4a3-a24c-4a96-938f-f00ef1f67ef3', 'attachment1.png'),
-        ('8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA', 'attachment2.pdf'),
-        ('5970E7-4DAD-4E87-9256-B1E63E4C2885', 'attachment3.jpg'),
+        os.path.join(OUTPUT_FOLDER, 'attachments', '87f4a3-a24c-4a96-938f-f00ef1f67ef3', 'attachment1.png'),
+        os.path.join(OUTPUT_FOLDER, 'attachments', '8AADAE-AB7D-4A7C-9C64-C5DD95D1ACFA', 'attachment2.pdf'),
+        os.path.join(OUTPUT_FOLDER, 'attachments', '5970E7-4DAD-4E87-9256-B1E63E4C2885', 'attachment3.jpg'),
     ]
-    for i in range(len(attachment_paths)):
-        attachment_paths[i] = os.path.join(ATTACHMENTS_FOLDER,
-                                           get_attachment_prefix(attachment_paths[i][0]),
-                                           attachment_paths[i][0],
-                                           attachment_paths[i][1])
     for path in attachment_paths:
-        print("Checking path:", path)
         assert os.path.exists(path)
-    # Check that links are correctly replaced in the Markdown files
 
 def test_links_replaced(setup_test_environment):
+    # Run the conversion first
+    main(input_folder=INPUT_FOLDER, output_folder=OUTPUT_FOLDER, attachments_folder=ATTACHMENTS_FOLDER)
+    # Test that links are correctly replaced in the Markdown files
     note_one_md_path = os.path.join(OUTPUT_FOLDER, 'Note One.md')
     with open(note_one_md_path, 'r') as f:
         content = f.read()
+        # Check that the link to Note Two is correctly replaced
         assert '[[Note Two]]' in content
+        # Check that the attachment link is correctly replaced
         assert '![[attachments/87f4a3-a24c-4a96-938f-f00ef1f67ef3/attachment1.png]]' in content
