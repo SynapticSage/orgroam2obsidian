@@ -1,11 +1,15 @@
 #!/usr/bin/env python
+# TODO: 2024/10/17
+# 1. Move utility files to utils.py
+# 2. Create more utils:
+#   - get_note_path(...)
+#   - get_attachment_path(...)
 
 import os
 import re
 import shlex
 import shutil
 import subprocess
-import sys
 import argparse
 
 ATTACHMENTS_FOLDER = 'attachments'  # Default value; can be overridden
