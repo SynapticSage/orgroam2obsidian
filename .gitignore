@@ -4,3 +4,5 @@ output/
 test/fakedata
 orgroam2obsidian/__pycache__
 test/__pycache__
+.venv/
+.mind
