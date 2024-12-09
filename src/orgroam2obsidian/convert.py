@@ -258,6 +258,8 @@ def main(input_folder='input', output_folder='output', attachments_folder='attac
         for note in notes:
             second_brain[note.id] = note
 
+    breakpoint()
+
     # Step 2: Convert notes to Markdown and copy attachments
     print("Transforming notes and copying attachments...")
     os.makedirs(output_folder, exist_ok=True)
