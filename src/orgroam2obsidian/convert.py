@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+"""
+Notes conversion script for Org-roam to Obsidian.
+
+This script converts Org-roam notes to Obsidian format, including converting Org files to Markdown and updating links.
+
+TODO:
+-----
+- Clean up the `extract_notes_from_file` function
+- Create an `evaluate_conversion` function that works via LLM
+- Note naming is busted -- downstream code fails to appreciate/expect the would-be names of notes after conversion.
+    - Place this metadata into the Note object, and utilize it, rather than recompute or hardcode it.
+
+"""
 
 # TODO: 2024/10/17
 # 1. Move utility functions to utils.py
@@ -12,172 +25,14 @@ import shlex
 import shutil
 import subprocess
 import argparse
+from .notecapture import extract_notes_from_file
 
 ATTACHMENTS_FOLDER = 'attachments'  # Default value; can be overridden
-
-class Note:
-    def __init__(self, id, title, content, level, attachments=None):
-        self.id = id
-        self.title = title
-        self.content = content
-        self.level = level  # Heading level in the Org file
-        self.attachments = attachments if attachments is not None else []
 
 def get_attachment_prefix(note_id):
     # Use the first two characters of the note ID as the attachment prefix
     return note_id[:2]
 
-def extract_notes_from_file(filename: str):
-    """
-    Extract notes (nodes) from an Org file, including the top-level content and subheadings with their own IDs.
-    """
-    notes = []
-    with open(filename, 'r') as fd:
-        lines = fd.readlines()
-
-    # Initialize variables
-    note = None
-    content_lines = []
-    attachments = []
-    current_level = 0
-    title = None
-    in_properties = False
-    properties = {}
-    line_index = 0
-
-    # First, parse the title and properties at the top of the file
-    while line_index < len(lines):
-        line = lines[line_index]
-        # Check for title
-        title_match = re.match(r'^\s*#\+title:\s*(.+)', line, re.IGNORECASE)
-        if title_match:
-            title = title_match.group(1).strip()
-            line_index += 1
-            continue
-        # Check for property drawer start
-        elif line.strip() == ':PROPERTIES:':
-            in_properties = True
-            line_index += 1
-            continue
-        # Check for property drawer end
-        elif line.strip() == ':END:':
-            in_properties = False
-            line_index += 1
-            continue
-        # Collect properties
-        elif in_properties:
-            prop_match = re.match(r':([^:]+):\s*(.+)', line.strip())
-            if prop_match:
-                key, value = prop_match.groups()
-                properties[key] = value
-            line_index += 1
-            continue
-        # Detect first heading
-        elif re.match(r'^\*+\s+', line):
-            break  # Start of first heading
-        else:
-            # Collect content lines
-            content_lines.append(line)
-            line_index += 1
-
-    # Create the top-level note if it has an ID
-    if properties.get('ID'):
-        note = Note(
-            id=properties['ID'],
-            title=title if title else 'Untitled',
-            content='',
-            level=0,
-        )
-        # Collect attachments from the content
-        attachments = []
-        attachment_link_pattern = r'\[\[attachment:([^\]]+)\]\]'
-        file_link_pattern = r'\[\[file:([^\]]+)\]\]'
-        for line in content_lines:
-            attachment_matches = re.findall(attachment_link_pattern, line)
-            attachments.extend(attachment_matches)
-            file_matches = re.findall(file_link_pattern, line)
-            for file_link in file_matches:
-                if file_link.startswith('attachments/') or file_link.startswith('./'):
-                    attachments.append(file_link)
-        note.attachments = attachments
-        note.content = ''.join(content_lines)
-        notes.append(note)
-        note = None  # Reset for the next note
-        content_lines = []
-        attachments = []
-
-    # Now process the rest of the file
-    while line_index < len(lines):
-        line = lines[line_index]
-        # Detect headings
-        heading_match = re.match(r'^(?P<stars>\*+)\s+(?P<title>.+)', line)
-        if heading_match:
-            # If we were collecting a note, save it
-            if note:
-                note.content = ''.join(content_lines)
-                note.attachments = attachments
-                notes.append(note)
-                # Reset for the next note
-                content_lines = []
-                attachments = []
-                note = None
-            # Start a new note
-            stars = heading_match.group('stars')
-            current_level = len(stars)
-            title = heading_match.group('title')
-            properties = {}
-            in_properties = False
-            line_index += 1
-            # Check for properties immediately after heading
-            while line_index < len(lines):
-                line = lines[line_index]
-                if line.strip() == ':PROPERTIES:':
-                    in_properties = True
-                    line_index += 1
-                elif line.strip() == ':END:':
-                    in_properties = False
-                    line_index += 1
-                elif in_properties:
-                    prop_match = re.match(r':([^:]+):\s*(.+)', line.strip())
-                    if prop_match:
-                        key, value = prop_match.groups()
-                        properties[key] = value
-                    line_index += 1
-                else:
-                    break  # Done with properties
-            # Now check if this heading has an ID
-            if properties.get('ID'):
-                note = Note(
-                    id=properties['ID'],
-                    title=title,
-                    content='',
-                    level=current_level
-                )
-            else:
-                note = None
-            continue
-        else:
-            if note:
-                # Collect content lines
-                content_lines.append(line)
-                # Find attachment links
-                attachment_link_pattern = r'\[\[attachment:([^\]]+)\]\]'
-                file_link_pattern = r'\[\[file:([^\]]+)\]\]'
-                attachment_matches = re.findall(attachment_link_pattern, line)
-                attachments.extend(attachment_matches)
-                file_matches = re.findall(file_link_pattern, line)
-                for file_link in file_matches:
-                    if file_link.startswith('attachments/') or file_link.startswith('./'):
-                        attachments.append(file_link)
-            line_index += 1
-
-    # Handle the last note
-    if note:
-        note.content = ''.join(content_lines)
-        note.attachments = attachments
-        notes.append(note)
-
-    return notes
 
 def sanitize_filename(filename):
     """
@@ -233,7 +88,10 @@ def copy_attachments(note, attachments_folder, output_folder, use_title=False):
             dest_dir = os.path.join(output_folder, attachments_basename, folder_name)
             os.makedirs(dest_dir, exist_ok=True)
             dest_path = os.path.join(dest_dir, attachment)
-            shutil.copy2(source_attachment_path, dest_path)
+            if os.path.isdir(source_attachment_path):
+                shutil.copytree(source_attachment_path, dest_path) # in case its a folder
+            else:
+                shutil.copy2(source_attachment_path, dest_path)
         else:
             print(f"Attachment not found: {source_attachment_path}")
 
@@ -258,14 +116,14 @@ def main(input_folder='input', output_folder='output', attachments_folder='attac
         for note in notes:
             second_brain[note.id] = note
 
-    breakpoint()
-
     # Step 2: Convert notes to Markdown and copy attachments
     print("Transforming notes and copying attachments...")
     os.makedirs(output_folder, exist_ok=True)
     for note_id, note in second_brain.items():
+        print(f"Converting note: {note.title}, ID: {note_id}")
         # Create a temporary Org file for each note
         temp_org_filename = os.path.join(output_folder, f"{note_id}.org")
+        print(f"Creating temporary Org file: {temp_org_filename}")
         with open(temp_org_filename, 'w') as fd:
             fd.write('*' * note.level + ' ' + note.title + '\n')
             fd.write(note.content)

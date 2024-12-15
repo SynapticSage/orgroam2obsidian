@@ -6,3 +6,7 @@ orgroam2obsidian/__pycache__
 test/__pycache__
 .venv/
 .mind
+src/orgroam2obsidian/__pycache__
+src/orgroam2obsidian.egg-info
+outputs/orgroam2obsidian_py,markdown.txt
+outputs/orgroam2obsidian_toml,py,txt,md,org.txt
